@@ -1,0 +1,15 @@
+package com.parklock.parklock_engine.vehicle;
+
+import com.parklock.parklock_engine.model.SpotType;
+
+public class EVCar extends Vehicle {
+
+    public EVCar(String licensePlate) {
+        super(licensePlate);
+    }
+
+    @Override
+    public SpotType getRequiredSpotType() {
+        return SpotType.EV_CHARGING;
+    }
+}
