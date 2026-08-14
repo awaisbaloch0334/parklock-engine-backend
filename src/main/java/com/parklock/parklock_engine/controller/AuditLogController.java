@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/admin/audit-logs")
+@RequestMapping("/api/v1/admin/audit-logs")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*") // Allows your Vercel frontend to fetch this data
 public class AuditLogController {
