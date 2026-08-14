@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class PingController {
 
-    @GetMapping("/")
+    @GetMapping("/api/ping") // Changed this to bypass security!
     public String ping() {
         return "PONG! Parklock Engine is live and serving the latest code!";
     }
