@@ -13,9 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 @RequiredArgsConstructor
@@ -23,74 +20,59 @@ public class ParkingAllocationService {
 
     private final ParkingSpotRepository parkingSpotRepository;
     private final ParkingTicketRepository parkingTicketRepository;
-    
-    /*
-     * INTERVIEW DEFENSE POINT (In-Memory Mutex Locking):
-     * ConcurrentHashMap stores a dedicated ReentrantLock for each Spot ID.
-     * This ensures that even if 20 threads from Gate A, B, and C hit the backend
-     * at the exact same millisecond, only ONE thread can acquire the lock for a specific spot.
-     */
-    private final ConcurrentHashMap<Long, ReentrantLock> spotLocks = new ConcurrentHashMap<>();
-    private ReentrantLock getLockForSpot(Long spotId) {
-        return spotLocks.computeIfAbsent(spotId, id -> new ReentrantLock());
-    }
 
+    /*
+     * INTERVIEW DEFENSE POINT (Distributed Pessimistic Locking):
+     * We replaced JVM-level ReentrantLocks with Database-level Pessimistic Locks.
+     * This ensures thread safety across multiple server instances in cloud environments.
+     * The fallback loop guarantees high availability without blocking the entire database table.
+     */
     @Transactional
     public ParkingTicket allocateSpotWithLock(Vehicle vehicle, String gateName) {
-        // 1. Fetch available spots using DB Pessimistic Lock
-        List<ParkingSpot> availableSpots = parkingSpotRepository.findAvailableSpotsWithLock(SpotStatus.AVAILABLE, vehicle.getRequiredSpotType());
+        
+        // 1. Fetch available spots using an UNLOCKED snapshot read
+        List<ParkingSpot> availableSpots = parkingSpotRepository.findByStatusAndSpotType(
+                SpotStatus.AVAILABLE, 
+                vehicle.getRequiredSpotType()
+        );
 
         if (availableSpots.isEmpty()) {
-            throw new IllegalStateException("No available spot found for type:" + vehicle.getRequiredSpotType());
+            throw new IllegalStateException("No available spot found for type: " + vehicle.getRequiredSpotType());
         }
 
-        //2. Target the available spot
-        ParkingSpot targetSpot = availableSpots.get(0);
-        ReentrantLock lock = getLockForSpot(targetSpot.getId());
-
-        try {
-           /*
-             * 3. Attempt to acquire the in-memory ReentrantLock with a 500ms timeout.
-             * If another gate thread is currently allocating this bay, tryLock() returns false.
-             */
-            boolean isLocked = lock.tryLock(500, TimeUnit.MILLISECONDS);
+        // 2. Iterate through the snapshot and attempt to lock a single spot at the DB level
+        for (ParkingSpot potentialSpot : availableSpots) {
             
-            if (!isLocked) {
-                throw new IllegalStateException("Race Condition Rejected: Spot " + targetSpot.getSpotNumber() + "is currently being locked by another gate thread!");
-            }
+            // 3. Acquire the database lock for this specific row
+            ParkingSpot lockedSpot = parkingSpotRepository.findByIdWithLock(potentialSpot.getId())
+                    .orElseThrow(() -> new IllegalStateException("Spot not found in database."));
 
-            try {
-                // Double-Check spot status after aquiring memory lock
-                if (targetSpot.getStatus() != SpotStatus.AVAILABLE) {
-                    throw new IllegalStateException("Spot " + targetSpot.getSpotNumber() + " was just occupied by another vehicle!");
-                }
+            // 4. Double-check status after acquiring the lock
+            if (lockedSpot.getStatus() == SpotStatus.AVAILABLE) {
+                
+                // We successfully claimed this spot! Mark it occupied and save.
+                lockedSpot.setStatus(SpotStatus.OCCUPIED);
+                parkingSpotRepository.save(lockedSpot);
 
-                // 4. Mark spot OCCUPIED and save
-                targetSpot.setStatus(SpotStatus.OCCUPIED);
-                parkingSpotRepository.save(targetSpot);
-
-                //5. Generate and return entry ticket
+                // 5. Generate and return the entry ticket
                 ParkingTicket ticket = new ParkingTicket(
-                    null,
-                    UUID.randomUUID().toString(),
-                    targetSpot.getId(),
-                    vehicle.getLicensePlate(),
-                    vehicle.getRequiredSpotType(),
-                    LocalDateTime.now(),
-                    null,
-                    null
+                        null,
+                        UUID.randomUUID().toString(),
+                        lockedSpot.getId(),
+                        vehicle.getLicensePlate(),
+                        vehicle.getRequiredSpotType(),
+                        LocalDateTime.now(),
+                        null,
+                        null
                 );
 
                 return parkingTicketRepository.save(ticket);
-            } finally {
-                // Always unlock in a finally block to prevent deadlocks
-                lock.unlock();
             }
-
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Thread interrupted while waiting for spot lock on:" + targetSpot.getSpotNumber());
+            
+            // If the status was OCCUPIED, the loop gracefully continues to the next spot
         }
+
+        // 6. If the loop finishes, heavy traffic grabbed all spots in our snapshot
+        throw new IllegalStateException("Heavy traffic: All available spots were taken during booking. Please try again.");
     }
 }
