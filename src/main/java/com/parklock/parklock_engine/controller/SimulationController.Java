@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/simulate")
-@CrossOrigin(origin = "*") //Allows React development server to call this endpoint
+@CrossOrigin(origins = "*") // FIX: Added the 's' to origins
 @RequiredArgsConstructor
 public class SimulationController {
 
@@ -19,6 +19,7 @@ public class SimulationController {
      * Triggers the multi-threaded GateTrafficSimulator from an HTTP POST request.
      * Example: POST /api/v1/simulate/race?concurrentThreads=20
      */
+    @PostMapping("/race") // FIX: Added the HTTP mapping!
     public ResponseEntity<RaceSimulationResult> runRaceConditionSimulation(
         @RequestParam(defaultValue = "20") int concurrentThreads
     ) throws InterruptedException {
