@@ -19,16 +19,17 @@ public class DataSeeder implements CommandLineRunner {
 
     /*
      * INTERVIEW DEFENSE POINT (CommandLineRunner):
-     * Executes automatically on application startup to seed the in-memory H2 database
+     * Executes automatically on application startup to seed the database
      * with realistic garage inventory (30 bays across STANDARD, EV, and DISABLED types).
      */
     @Override
     public void run(String... args) throws Exception {
+        // The seeder only runs if the database is completely empty
         if (parkingSpotRepository.count() == 0) {
             List<ParkingSpot> spots = new ArrayList<>();
 
             // Seed 20 Standard Bays (A-101 to A-120)
-            for (int i = 1; i <= 6; i++) {
+            for (int i = 1; i <= 20; i++) {
                 spots.add(new ParkingSpot(null, "A-1" + String.format("%02d", i), SpotType.STANDARD, SpotStatus.AVAILABLE, 0L));
             }
 
@@ -46,5 +47,4 @@ public class DataSeeder implements CommandLineRunner {
             System.out.println("✅ [DataSeeder] Successfully initialized 30 parking spots in the database!");
         }
     }
-
 }
