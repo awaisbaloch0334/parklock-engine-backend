@@ -11,6 +11,10 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.security.KeyFactory;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 import java.util.List;
 
 @Configuration
@@ -33,9 +37,19 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        // Explicitly points to your Clerk instance JWKS public keys endpoint
-        String jwkSetUri = "https://meet-fawn-9052.accounts.dev/.well-known/jwks.json";
-        return NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        try {
+            // Clerk JWT Verification Public Key (PEM headers/footers and newlines removed)
+            String publicKeyPEM = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp+kIBy6N19QhK4eNNRYyR6UqkWnw4NitblxaVjlr04b5kKI9aYLLlsTSH9sCQlNp4xN4Ar5/AnB2PNrAYL90MQy+CtMRJkIWqBp8rUX2UHWseMZRyqYod5sUW10N0/dAgco05vIMSDYYCmLY06ipY/WjSHWs7OyhCEyktILFcHEOgRxXWyeG/tpg6hq2T4HI995j7CFjGGmP3+zRVrvPkNIj/u9bSUSn4wU+GSS4qwQqQzHTWNrHX9aVZm6hU3iJQryRTPl2ZcHZZ8JF4w01AK38anXdlqiLX4Oq4JVRA6hj+4FPQpyJKm7QSwTUQkHjhnvnZeeJrqNj58ialY6jTwIDAQAB";
+            
+            byte[] encoded = Base64.getDecoder().decode(publicKeyPEM);
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
+            RSAPublicKey publicKey = (RSAPublicKey) keyFactory.generatePublic(keySpec);
+            
+            return NimbusJwtDecoder.withPublicKey(publicKey).build();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize JWT Decoder with Clerk Public Key", e);
+        }
     }
 
     @Bean
