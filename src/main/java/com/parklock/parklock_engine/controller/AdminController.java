@@ -1,20 +1,17 @@
 package com.parklock.parklock_engine.controller;
 
 import com.parklock.parklock_engine.config.SystemConfig;
-import com.parklock.parklock_engine.model.AuditAction;
-import com.parklock.parklock_engine.model.AuditLog;
-import com.parklock.parklock_engine.model.ParkingSpot;
-import com.parklock.parklock_engine.model.SpotStatus;
-import com.parklock.parklock_engine.repository.AuditLogRepository;
-import com.parklock.parklock_engine.repository.ParkingSpotRepository;
-import com.parklock.parklock_engine.repository.SystemConfigRepository;
+import com.parklock.parklock_engine.model.*;
+import com.parklock.parklock_engine.repository.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -23,13 +20,19 @@ public class AdminController {
     private final AuditLogRepository auditLogRepository;
     private final SystemConfigRepository systemConfigRepository;
     private final ParkingSpotRepository parkingSpotRepository;
+    private final ParkingTicketRepository parkingTicketRepository; // INJECTED TICKET REPO
+    private final TransactionRepository transactionRepository;     // INJECTED HISTORY REPO
 
     public AdminController(AuditLogRepository auditLogRepository, 
                            SystemConfigRepository systemConfigRepository,
-                           ParkingSpotRepository parkingSpotRepository) {
+                           ParkingSpotRepository parkingSpotRepository,
+                           ParkingTicketRepository parkingTicketRepository,
+                           TransactionRepository transactionRepository) {
         this.auditLogRepository = auditLogRepository;
         this.systemConfigRepository = systemConfigRepository;
         this.parkingSpotRepository = parkingSpotRepository;
+        this.parkingTicketRepository = parkingTicketRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     @GetMapping("/audit-logs")
@@ -48,20 +51,44 @@ public class AdminController {
             return ResponseEntity.status(404).body(Map.of("error", "Parking spot not found"));
         }
         
-        // 1. Update the Spot (This works!)
+        LocalDateTime now = LocalDateTime.now();
+        String vehiclePlate = "UNKNOWN";
+
+        // 1. FIND AND CLOSE THE ACTIVE PARKING TICKET
+        Optional<ParkingTicket> activeTicketOpt = parkingTicketRepository.findBySpotIdAndExitTimeIsNull(spotId);
+        
+        if (activeTicketOpt.isPresent()) {
+            ParkingTicket ticket = activeTicketOpt.get();
+            ticket.setExitTime(now);
+            ticket.setTotalPrice(0.0); // Override fee to $0 since Admin forced it
+            vehiclePlate = ticket.getLicensePlate(); // Save plate for the audit log!
+            parkingTicketRepository.save(ticket);
+
+            // 2. FIND AND CLOSE THE PARKING HISTORY TRANSACTION
+            Optional<ParkingTransaction> activeTransactionOpt = transactionRepository.findByTicketNumberAndStatus(ticket.getTicketNumber(), "ACTIVE");
+            if (activeTransactionOpt.isPresent()) {
+                ParkingTransaction transaction = activeTransactionOpt.get();
+                transaction.setExitTime(now);
+                transaction.setStatus("COMPLETED");
+                transaction.setChargeAmount(0.0);
+                transactionRepository.save(transaction);
+            }
+        }
+
+        // 3. FREE UP THE PARKING SPOT
         spot.setStatus(SpotStatus.AVAILABLE); 
         parkingSpotRepository.save(spot);
 
-        // 2. Safely try to save the Audit Log
+        // 4. SAFELY SAVE THE AUDIT LOG
         try {
             AuditLog audit = new AuditLog();
             audit.setAction(AuditAction.ADMIN_OVERRIDE);
             audit.setUserEmail(adminIdentifier);
             audit.setSpotId(spotId);
-            audit.setDetails("Admin forcefully cleared parking bay #" + spotId);
+            audit.setLicensePlate(vehiclePlate.equals("UNKNOWN") ? null : vehiclePlate);
+            audit.setDetails("Admin forcefully cleared parking bay #" + spotId + " (Vehicle: " + vehiclePlate + ")");
             auditLogRepository.save(audit);
         } catch (Exception e) {
-            // If it crashes, log it to Render but DO NOT crash the frontend response!
             System.err.println("--- FAILED TO SAVE AUDIT LOG (UNPARK) ---");
             System.err.println("Error: " + e.getMessage());
         }
@@ -90,7 +117,6 @@ public class AdminController {
             return ResponseEntity.badRequest().body(Map.of("error", "Price cannot be null"));
         }
 
-        // 1. Update the Price (This works!)
         SystemConfig config = systemConfigRepository.findByConfigKey("PRICE_PER_HOUR")
             .orElse(new SystemConfig()); 
         
@@ -98,7 +124,6 @@ public class AdminController {
         config.setConfigValue(String.valueOf(newPrice));
         systemConfigRepository.save(config);
 
-        // 2. Safely try to save the Audit Log
         try {
             AuditLog audit = new AuditLog();
             audit.setAction(AuditAction.CONFIG_CHANGE);
@@ -106,7 +131,6 @@ public class AdminController {
             audit.setDetails("Updated hourly parking rate to $" + newPrice);
             auditLogRepository.save(audit);
         } catch (Exception e) {
-             // If it crashes, log it to Render but DO NOT crash the frontend response!
              System.err.println("--- FAILED TO SAVE AUDIT LOG (PRICE) ---");
              System.err.println("Error: " + e.getMessage());
         }
