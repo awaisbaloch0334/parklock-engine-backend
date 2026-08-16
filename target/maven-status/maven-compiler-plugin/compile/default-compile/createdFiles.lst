@@ -31,7 +31,6 @@ com\parklock\parklock_engine\config\DataSeeder.class
 com\parklock\parklock_engine\strategy\EVPricingStrategy.class
 com\parklock\parklock_engine\model\ParkingSpot.class
 com\parklock\parklock_engine\controller\PingController.class
-com\parklock\parklock_engine\security\JwtUtil.class
 com\parklock\parklock_engine\strategy\PricingStrategyFactory$1.class
 com\parklock\parklock_engine\model\ParkingTransaction.class
 com\parklock\parklock_engine\dto\RaceSimulationResult.class

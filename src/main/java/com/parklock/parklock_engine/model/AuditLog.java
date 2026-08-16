@@ -16,8 +16,9 @@ public class AuditLog {
     @Column(nullable = false)
     private AuditAction action;
 
-    // These can be null, as some actions (like forcing a gate open) 
-    // might not be associated with a specific vehicle or ticket.
+    @Column(name = "user_email")
+    private String userEmail; // Tracks which admin performed this action via Clerk
+
     @Column(name = "license_plate")
     private String licensePlate;
 
@@ -32,14 +33,15 @@ public class AuditLog {
     private LocalDateTime timestamp;
 
     @Column(length = 500)
-    private String details; // A flexible text field for extra context
+    private String details;
 
-    // Default constructor required by JPA
+    // Default constructor
     public AuditLog() {}
 
-    // Constructor for easy logging
-    public AuditLog(AuditAction action, String licensePlate, String ticketNumber, Long spotId, String details) {
+    // Full constructor with userEmail
+    public AuditLog(AuditAction action, String userEmail, String licensePlate, String ticketNumber, Long spotId, String details) {
         this.action = action;
+        this.userEmail = userEmail;
         this.licensePlate = licensePlate;
         this.ticketNumber = ticketNumber;
         this.spotId = spotId;
@@ -50,6 +52,8 @@ public class AuditLog {
     public Long getId() { return id; }
     public AuditAction getAction() { return action; }
     public void setAction(AuditAction action) { this.action = action; }
+    public String getUserEmail() { return userEmail; }
+    public void setUserEmail(String userEmail) { this.userEmail = userEmail; }
     public String getLicensePlate() { return licensePlate; }
     public void setLicensePlate(String licensePlate) { this.licensePlate = licensePlate; }
     public String getTicketNumber() { return ticketNumber; }

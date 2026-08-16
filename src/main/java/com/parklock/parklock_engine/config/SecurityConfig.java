@@ -26,13 +26,15 @@ public class SecurityConfig {
             
             // 3. Configure route permissions
             .authorizeHttpRequests(auth -> auth
-                // Temporarily permit all API routes so Vercel can fetch data 
-                // until we implement the JWT token system!
-                .requestMatchers("/api/**").permitAll() 
+                // Allow public endpoints (like your parking grid and gate controls)
+                .requestMatchers("/api/parking/**", "/api/gates/**", "/error").permitAll()
+                
+                // Lock down everything else so it requires a valid Clerk JWT token
                 .anyRequest().authenticated()
-            );
+            )
             
-            // NOTE: We will inject our JWT token filter here in the next step!
+            // 4. Enable OAuth2 Resource Server support for validating JWTs from Clerk
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}));
             
         return http.build();
     }

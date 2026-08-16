@@ -20,7 +20,6 @@ C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\pa
 C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\parklock_engine\repository\ParkingSpotRepository.java
 C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\parklock_engine\repository\ParkingTicketRepository.java
 C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\parklock_engine\repository\TransactionRepository.java
-C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\parklock_engine\security\JwtUtil.java
 C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\parklock_engine\service\GateTrafficSimulator.java
 C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\parklock_engine\service\ParkingAllocationService.java
 C:\My Java Project\parklock-engine\parklock-engine\src\main\java\com\parklock\parklock_engine\service\ParkingService.java
