@@ -48,22 +48,27 @@ public class AdminController {
             return ResponseEntity.status(404).body(Map.of("error", "Parking spot not found"));
         }
         
+        // 1. Update the Spot (This works!)
         spot.setStatus(SpotStatus.AVAILABLE); 
         parkingSpotRepository.save(spot);
 
-        // SAFELY create AuditLog using your exact setters
-        AuditLog audit = new AuditLog();
-        audit.setAction(AuditAction.ADMIN_OVERRIDE);
-        audit.setUserEmail(adminIdentifier);
-        audit.setSpotId(spotId);
-        audit.setDetails("Admin forcefully cleared parking bay #" + spotId);
-        // @CreationTimestamp handles the timestamp automatically!
-        auditLogRepository.save(audit);
+        // 2. Safely try to save the Audit Log
+        try {
+            AuditLog audit = new AuditLog();
+            audit.setAction(AuditAction.ADMIN_OVERRIDE);
+            audit.setUserEmail(adminIdentifier);
+            audit.setSpotId(spotId);
+            audit.setDetails("Admin forcefully cleared parking bay #" + spotId);
+            auditLogRepository.save(audit);
+        } catch (Exception e) {
+            // If it crashes, log it to Render but DO NOT crash the frontend response!
+            System.err.println("--- FAILED TO SAVE AUDIT LOG (UNPARK) ---");
+            System.err.println("Error: " + e.getMessage());
+        }
 
         return ResponseEntity.ok(Map.of("message", "Bay " + spotId + " forcefully unparked."));
     }
 
-    // Returns plain string so your React frontend displays it perfectly without {"pricePerHour": ...}
     @GetMapping("/config/price")
     public ResponseEntity<String> getPricing() {
         String price = systemConfigRepository.findByConfigKey("PRICE_PER_HOUR")
@@ -85,6 +90,7 @@ public class AdminController {
             return ResponseEntity.badRequest().body(Map.of("error", "Price cannot be null"));
         }
 
+        // 1. Update the Price (This works!)
         SystemConfig config = systemConfigRepository.findByConfigKey("PRICE_PER_HOUR")
             .orElse(new SystemConfig()); 
         
@@ -92,12 +98,18 @@ public class AdminController {
         config.setConfigValue(String.valueOf(newPrice));
         systemConfigRepository.save(config);
 
-        AuditLog audit = new AuditLog();
-        audit.setAction(AuditAction.CONFIG_CHANGE);
-        audit.setUserEmail(adminIdentifier);
-        audit.setDetails("Updated hourly parking rate to $" + newPrice);
-        // @CreationTimestamp handles the timestamp automatically!
-        auditLogRepository.save(audit);
+        // 2. Safely try to save the Audit Log
+        try {
+            AuditLog audit = new AuditLog();
+            audit.setAction(AuditAction.CONFIG_CHANGE);
+            audit.setUserEmail(adminIdentifier);
+            audit.setDetails("Updated hourly parking rate to $" + newPrice);
+            auditLogRepository.save(audit);
+        } catch (Exception e) {
+             // If it crashes, log it to Render but DO NOT crash the frontend response!
+             System.err.println("--- FAILED TO SAVE AUDIT LOG (PRICE) ---");
+             System.err.println("Error: " + e.getMessage());
+        }
 
         return ResponseEntity.ok(Map.of("message", "Price per hour successfully updated to $" + newPrice));
     }
