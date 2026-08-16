@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator; // Added import for sorting
 import java.util.List;
 import java.util.UUID;
 
@@ -40,6 +41,9 @@ public class ParkingServiceImpl implements ParkingService {
             throw new IllegalStateException("No available parking spot found for type: " + vehicle.getRequiredSpotType());    
         }
 
+        // SORT SECURELY: Guarantee we always pick the lowest ID first (Sequential Order)
+        availableSpots.sort(Comparator.comparing(ParkingSpot::getId));
+
         for (ParkingSpot potentialSpot : availableSpots) {
             ParkingSpot lockedSpot = parkingSpotRepository.findByIdWithLock(potentialSpot.getId())
                     .orElseThrow(() -> new IllegalStateException("Spot not found in database."));
@@ -61,7 +65,6 @@ public class ParkingServiceImpl implements ParkingService {
                 
                 ParkingTicket savedTicket = parkingTicketRepository.save(ticket);
 
-                // Updated constructor call: passing "system" or null for userEmail
                 AuditLog parkLog = new AuditLog(
                         AuditAction.VEHICLE_PARKED,
                         "system",
@@ -103,7 +106,6 @@ public class ParkingServiceImpl implements ParkingService {
         spot.setStatus(SpotStatus.AVAILABLE);
         parkingSpotRepository.save(spot);
         
-        // Updated constructor call: passing "system" for userEmail
         AuditLog unparkLog = new AuditLog(
                 AuditAction.VEHICLE_UNPARKED,
                 "system",
