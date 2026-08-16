@@ -3,7 +3,10 @@ package com.parklock.parklock_engine.controller;
 import com.parklock.parklock_engine.config.SystemConfig;
 import com.parklock.parklock_engine.model.AuditAction;
 import com.parklock.parklock_engine.model.AuditLog;
+import com.parklock.parklock_engine.model.ParkingSpot;
+import com.parklock.parklock_engine.model.SpotStatus;
 import com.parklock.parklock_engine.repository.AuditLogRepository;
+import com.parklock.parklock_engine.repository.ParkingSpotRepository;
 import com.parklock.parklock_engine.repository.SystemConfigRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,13 +22,17 @@ public class AdminController {
 
     private final AuditLogRepository auditLogRepository;
     private final SystemConfigRepository systemConfigRepository;
+    private final ParkingSpotRepository parkingSpotRepository;
 
-    public AdminController(AuditLogRepository auditLogRepository, SystemConfigRepository systemConfigRepository) {
+    public AdminController(AuditLogRepository auditLogRepository, 
+                           SystemConfigRepository systemConfigRepository,
+                           ParkingSpotRepository parkingSpotRepository) {
         this.auditLogRepository = auditLogRepository;
         this.systemConfigRepository = systemConfigRepository;
+        this.parkingSpotRepository = parkingSpotRepository;
     }
 
-    // 1. Get all audit logs with admin tracking
+    // 1. Get all audit logs
     @GetMapping("/audit-logs")
     public ResponseEntity<List<AuditLog>> getAuditLogs() {
         List<AuditLog> logs = auditLogRepository.findAllByOrderByTimestampDesc();
@@ -34,12 +41,25 @@ public class AdminController {
 
     // 2. Force Unpark / Override a stuck parking bay
     @PostMapping("/force-unpark/{spotId}")
-    public ResponseEntity<String> forceUnpark(@PathVariable Long spotId, @AuthenticationPrincipal Jwt jwt) {
-        String adminEmail = jwt != null ? jwt.getClaimAsString("email") : "admin@parklock.com";
+    public ResponseEntity<Map<String, String>> forceUnpark(@PathVariable Long spotId, @AuthenticationPrincipal Jwt jwt) {
+        String adminIdentifier = jwt != null && jwt.getClaimAsString("email") != null 
+            ? jwt.getClaimAsString("email") 
+            : (jwt != null ? jwt.getSubject() : "admin@parklock.com");
 
+        // ACTUALLY UNPARK THE SPOT IN THE DATABASE
+        ParkingSpot spot = parkingSpotRepository.findById(spotId).orElse(null);
+        if (spot == null) {
+            return ResponseEntity.status(404).body(Map.of("error", "Parking spot not found"));
+        }
+        
+        // Update the spot status using your exact enum
+        spot.setStatus(SpotStatus.AVAILABLE); 
+        parkingSpotRepository.save(spot);
+
+        // Record Audit Log
         AuditLog audit = new AuditLog(
             AuditAction.ADMIN_OVERRIDE,
-            adminEmail,
+            adminIdentifier,
             null,
             null,
             spotId,
@@ -47,39 +67,42 @@ public class AdminController {
         );
         auditLogRepository.save(audit);
 
-        return ResponseEntity.ok("Bay " + spotId + " forcefully unparked.");
+        // Return a proper JSON object so React doesn't crash!
+        return ResponseEntity.ok(Map.of("message", "Bay " + spotId + " forcefully unparked."));
     }
 
     // 3. Get Current Price Per Hour
     @GetMapping("/config/price")
-    public ResponseEntity<String> getPricing() {
+    public ResponseEntity<Map<String, String>> getPricing() {
         String price = systemConfigRepository.findByConfigKey("PRICE_PER_HOUR")
             .map(SystemConfig::getConfigValue)
-            .orElse("5.00"); // Default fallback
-        return ResponseEntity.ok(price);
+            .orElse("5.00");
+            
+        return ResponseEntity.ok(Map.of("pricePerHour", price));
     }
 
     // 4. Adjust Price Per Hour
     @PostMapping("/config/price")
-    public ResponseEntity<String> updatePricing(@RequestBody Map<String, Double> payload, @AuthenticationPrincipal Jwt jwt) {
-        String adminEmail = jwt != null ? jwt.getClaimAsString("email") : "admin@parklock.com";
+    public ResponseEntity<Map<String, String>> updatePricing(@RequestBody Map<String, Double> payload, @AuthenticationPrincipal Jwt jwt) {
+        String adminIdentifier = jwt != null && jwt.getClaimAsString("email") != null 
+            ? jwt.getClaimAsString("email") 
+            : (jwt != null ? jwt.getSubject() : "admin@parklock.com");
+            
         Double newPrice = payload.get("pricePerHour");
 
         if (newPrice == null) {
-            return ResponseEntity.badRequest().body("Price per hour cannot be null");
+            return ResponseEntity.badRequest().body(Map.of("error", "Price per hour cannot be null"));
         }
 
-        // Save or update in NeonDB
         SystemConfig config = systemConfigRepository.findByConfigKey("PRICE_PER_HOUR")
             .orElse(new SystemConfig("PRICE_PER_HOUR", "5.00"));
         
         config.setConfigValue(String.valueOf(newPrice));
         systemConfigRepository.save(config);
 
-        // Record audit log
         AuditLog audit = new AuditLog(
             AuditAction.CONFIG_CHANGE,
-            adminEmail,
+            adminIdentifier,
             null,
             null,
             null,
@@ -87,6 +110,6 @@ public class AdminController {
         );
         auditLogRepository.save(audit);
 
-        return ResponseEntity.ok("Price per hour successfully updated to $" + newPrice);
+        return ResponseEntity.ok(Map.of("message", "Price per hour successfully updated to $" + newPrice));
     }
 }
