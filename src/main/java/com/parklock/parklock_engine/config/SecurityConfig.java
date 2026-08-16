@@ -4,7 +4,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+//import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
@@ -38,7 +42,6 @@ public class SecurityConfig {
     @Bean
     public JwtDecoder jwtDecoder() {
         try {
-            // Clerk JWT Verification Public Key (PEM headers/footers and newlines removed)
             String publicKeyPEM = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp+kIBy6N19QhK4eNNRYyR6UqkWnw4NitblxaVjlr04b5kKI9aYLLlsTSH9sCQlNp4xN4Ar5/AnB2PNrAYL90MQy+CtMRJkIWqBp8rUX2UHWseMZRyqYod5sUW10N0/dAgco05vIMSDYYCmLY06ipY/WjSHWs7OyhCEyktILFcHEOgRxXWyeG/tpg6hq2T4HI995j7CFjGGmP3+zRVrvPkNIj/u9bSUSn4wU+GSS4qwQqQzHTWNrHX9aVZm6hU3iJQryRTPl2ZcHZZ8JF4w01AK38anXdlqiLX4Oq4JVRA6hj+4FPQpyJKm7QSwTUQkHjhnvnZeeJrqNj58ialY6jTwIDAQAB";
             
             byte[] encoded = Base64.getDecoder().decode(publicKeyPEM);
@@ -46,7 +49,13 @@ public class SecurityConfig {
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
             RSAPublicKey publicKey = (RSAPublicKey) keyFactory.generatePublic(keySpec);
             
-            return NimbusJwtDecoder.withPublicKey(publicKey).build();
+            NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withPublicKey(publicKey).build();
+            
+            // Only validate token expiration timestamp locally, ignoring strict issuer URL checks
+            OAuth2TokenValidator<Jwt> withTimestamp = new JwtTimestampValidator();
+            jwtDecoder.setJwtValidator(withTimestamp);
+            
+            return jwtDecoder;
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize JWT Decoder with Clerk Public Key", e);
         }
