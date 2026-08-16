@@ -32,56 +32,47 @@ public class AdminController {
         this.parkingSpotRepository = parkingSpotRepository;
     }
 
-    // 1. Get all audit logs
     @GetMapping("/audit-logs")
     public ResponseEntity<List<AuditLog>> getAuditLogs() {
-        List<AuditLog> logs = auditLogRepository.findAllByOrderByTimestampDesc();
-        return ResponseEntity.ok(logs);
+        return ResponseEntity.ok(auditLogRepository.findAllByOrderByTimestampDesc());
     }
 
-    // 2. Force Unpark / Override a stuck parking bay
     @PostMapping("/force-unpark/{spotId}")
     public ResponseEntity<Map<String, String>> forceUnpark(@PathVariable Long spotId, @AuthenticationPrincipal Jwt jwt) {
         String adminIdentifier = jwt != null && jwt.getClaimAsString("email") != null 
             ? jwt.getClaimAsString("email") 
             : (jwt != null ? jwt.getSubject() : "admin@parklock.com");
 
-        // ACTUALLY UNPARK THE SPOT IN THE DATABASE
         ParkingSpot spot = parkingSpotRepository.findById(spotId).orElse(null);
         if (spot == null) {
             return ResponseEntity.status(404).body(Map.of("error", "Parking spot not found"));
         }
         
-        // Update the spot status using your exact enum
         spot.setStatus(SpotStatus.AVAILABLE); 
         parkingSpotRepository.save(spot);
 
-        // Record Audit Log
-        AuditLog audit = new AuditLog(
-            AuditAction.ADMIN_OVERRIDE,
-            adminIdentifier,
-            null,
-            null,
-            spotId,
-            "Admin forcefully cleared parking bay #" + spotId
-        );
+        // SAFELY create AuditLog using your exact setters
+        AuditLog audit = new AuditLog();
+        audit.setAction(AuditAction.ADMIN_OVERRIDE);
+        audit.setUserEmail(adminIdentifier);
+        audit.setSpotId(spotId);
+        audit.setDetails("Admin forcefully cleared parking bay #" + spotId);
+        // @CreationTimestamp handles the timestamp automatically!
         auditLogRepository.save(audit);
 
-        // Return a proper JSON object so React doesn't crash!
         return ResponseEntity.ok(Map.of("message", "Bay " + spotId + " forcefully unparked."));
     }
 
-    // 3. Get Current Price Per Hour
+    // Returns plain string so your React frontend displays it perfectly without {"pricePerHour": ...}
     @GetMapping("/config/price")
-    public ResponseEntity<Map<String, String>> getPricing() {
+    public ResponseEntity<String> getPricing() {
         String price = systemConfigRepository.findByConfigKey("PRICE_PER_HOUR")
             .map(SystemConfig::getConfigValue)
             .orElse("5.00");
             
-        return ResponseEntity.ok(Map.of("pricePerHour", price));
+        return ResponseEntity.ok(price);
     }
 
-    // 4. Adjust Price Per Hour
     @PostMapping("/config/price")
     public ResponseEntity<Map<String, String>> updatePricing(@RequestBody Map<String, Double> payload, @AuthenticationPrincipal Jwt jwt) {
         String adminIdentifier = jwt != null && jwt.getClaimAsString("email") != null 
@@ -91,23 +82,21 @@ public class AdminController {
         Double newPrice = payload.get("pricePerHour");
 
         if (newPrice == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Price per hour cannot be null"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Price cannot be null"));
         }
 
         SystemConfig config = systemConfigRepository.findByConfigKey("PRICE_PER_HOUR")
-            .orElse(new SystemConfig("PRICE_PER_HOUR", "5.00"));
+            .orElse(new SystemConfig()); 
         
+        config.setConfigKey("PRICE_PER_HOUR");
         config.setConfigValue(String.valueOf(newPrice));
         systemConfigRepository.save(config);
 
-        AuditLog audit = new AuditLog(
-            AuditAction.CONFIG_CHANGE,
-            adminIdentifier,
-            null,
-            null,
-            null,
-            "Updated hourly parking rate to $" + newPrice
-        );
+        AuditLog audit = new AuditLog();
+        audit.setAction(AuditAction.CONFIG_CHANGE);
+        audit.setUserEmail(adminIdentifier);
+        audit.setDetails("Updated hourly parking rate to $" + newPrice);
+        // @CreationTimestamp handles the timestamp automatically!
         auditLogRepository.save(audit);
 
         return ResponseEntity.ok(Map.of("message", "Price per hour successfully updated to $" + newPrice));
